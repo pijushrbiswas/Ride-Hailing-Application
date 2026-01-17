@@ -97,7 +97,7 @@ describe('Drivers API', () => {
           longitude: -122.4194
         });
 
-      expect(response.status).toBe(204);
+      expect(response.status).toBe(200);
       expect(redis.geoAdd).toHaveBeenCalledWith('drivers:geo', {
         longitude: -122.4194,
         latitude: 37.7749,

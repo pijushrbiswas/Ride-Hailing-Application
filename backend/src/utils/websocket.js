@@ -94,6 +94,14 @@ class WebSocketManager {
     });
   }
 
+  // Broadcast driver location update event
+  broadcastLocationUpdate(driver) {
+    this.broadcast({
+      type: 'DRIVER_LOCATION_UPDATED',
+      payload: driver
+    });
+  }
+
   // Broadcast driver created event
   broadcastDriverCreated(driver) {
     this.broadcast({

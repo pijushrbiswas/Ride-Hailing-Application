@@ -39,8 +39,8 @@ exports.getAllDrivers = async (req, res, next) => {
 
 exports.updateLocation = async (req, res, next) => {
   try {
-    await service.updateLocation(req.params.id, req.body);
-    res.status(204).send();
+    const updatedData = await service.updateLocation(req.params.id, req.body);
+    res.status(200).json(updatedData);
   } catch (e) {
     next(e);
   }

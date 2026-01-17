@@ -34,25 +34,41 @@ exports.createDriver = async (data) => {
 };
 
 exports.updateLocation = async (driverId, { latitude, longitude }) => {
-  // 1. Update Redis GEO (fast path) with TTL
-  await redis.geoAdd('drivers:geo', {
-    longitude,
-    latitude,
-    member: driverId
-  });
-  
-  // Set expiry on geo location
-  await redis.expire(`drivers:geo:${driverId}`, CACHE_TTL.DRIVER_LOCATION);
+  try {
+    // 1. Update Redis GEO (fast path) with TTL
+    await redis.geoAdd('drivers:geo', {
+      longitude,
+      latitude,
+      member: driverId
+    });
+    
+    // Set expiry on geo location (60 seconds)
+    await redis.expire(`drivers:geo:${driverId}`, CACHE_TTL.DRIVER_LOCATION);
 
-  // 2. Update Postgres (source of truth) - without PostGIS
-  await db.query(
-    `UPDATE drivers
-     SET latitude=$1,
-         longitude=$2,
-         updated_at=now()
-     WHERE id=$3`,
-    [latitude, longitude, driverId]
-  );
+    // 2. Update Postgres ASYNCHRONOUSLY (fire-and-forget)
+    // Don't await - return to client immediately after Redis is updated
+    db.query(
+      `UPDATE drivers
+       SET latitude=$1,
+           longitude=$2,
+           location=ST_SetSRID(ST_MakePoint($2, $1), 4326),
+       updated_at=now()
+       WHERE id=$3`,
+      [latitude, longitude, driverId]
+    ).catch(error => {
+      logger.error({ driverId, error: error.message }, 'Failed to update PostgreSQL location');
+    });
+
+    // 3. Broadcast location update to connected clients
+    const driver = { id: driverId, latitude, longitude };
+    wsManager.broadcastLocationUpdate(driver);
+
+    logger.info({ driverId, latitude, longitude }, 'Driver location updated in Redis');
+    return driver;
+  } catch (error) {
+    logger.error({ driverId, error: error.message }, 'Failed to update driver location');
+    throw error;
+  }
 };
 
 exports.updateDriverStatus = async (driverId, status) => {

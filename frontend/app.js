@@ -93,6 +93,9 @@ function handleWebSocketMessage(data) {
         case 'DRIVER_STATUS_CHANGED':
             handleDriverStatusChanged(data.payload);
             break;
+        case 'DRIVER_LOCATION_UPDATED':
+            handleDriverLocationUpdated(data.payload);
+            break;
         case 'TRIP_STARTED':
             handleTripStarted(data.payload);
             break;
@@ -136,6 +139,17 @@ function handleDriverAssigned(data) {
 function handleDriverStatusChanged(driver) {
     drivers.set(driver.id, driver);
     renderDrivers();
+}
+
+function handleDriverLocationUpdated(driver) {
+    if (drivers.has(driver.id)) {
+        const existingDriver = drivers.get(driver.id);
+        drivers.set(driver.id, { ...existingDriver, ...driver });
+    } else {
+        drivers.set(driver.id, driver);
+    }
+    renderDrivers();
+    logActivity(`📍 Driver ${driver.name || driver.id.substring(0, 8)} location updated to (${driver.latitude.toFixed(4)}, ${driver.longitude.toFixed(4)})`, 'info');
 }
 
 function handleDriverCreated(driver) {
@@ -237,6 +251,35 @@ function setupFormHandler() {
             showNotification('Failed to request ride', 'error');
         }
     });
+}
+
+// Update Driver Location
+async function updateDriverLocation(driverId, latitude, longitude) {
+    try {
+        const response = await fetch(`${API_BASE}/drivers/${driverId}/location`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ latitude, longitude })
+        });
+        
+        if (response.ok) {
+            const updatedDriver = await response.json();
+            console.log('Location updated:', updatedDriver);
+            logActivity(`📍 Driver location updated to (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`, 'success');
+            
+            // Update local drivers map and re-render
+            drivers.set(driverId, updatedDriver);
+            renderDrivers();
+        } else {
+            console.error('Failed to update location:', response.status);
+            logActivity('Failed to update driver location', 'warning');
+        }
+    } catch (error) {
+        console.error('Error updating driver location:', error);
+        logActivity('Error updating driver location', 'error');
+    }
 }
 
 // Render Functions
