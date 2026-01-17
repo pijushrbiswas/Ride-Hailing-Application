@@ -1,10 +1,5 @@
 # Low-Level System Design Document
 ## Ride-Hailing Application
-
-**Version:** 1.0  
-**Date:** January 17, 2026  
-**Status:** Production-Ready Implementation
-
 ---
 
 ## Table of Contents
