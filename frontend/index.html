@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ride Hailing - Live Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚗 Ride Hailing Dashboard</h1>
+            <div class="connection-status">
+                <span id="status-indicator" class="status-dot disconnected"></span>
+                <span id="status-text">Disconnected</span>
+            </div>
+        </header>
+
+        <div class="dashboard">
+            <!-- Request Ride Section -->
+            <section class="card request-section">
+                <h2>📍 Request a Ride</h2>
+                <form id="ride-form">
+                    <div class="form-group">
+                        <label for="pickup">Pickup Location</label>
+                        <div class="location-inputs">
+                            <input type="number" id="pickup-lat" placeholder="Latitude" step="0.000001" value="37.7749" required>
+                            <input type="number" id="pickup-lng" placeholder="Longitude" step="0.000001" value="-122.4194" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="dropoff">Dropoff Location</label>
+                        <div class="location-inputs">
+                            <input type="number" id="dropoff-lat" placeholder="Latitude" step="0.000001" value="37.7849" required>
+                            <input type="number" id="dropoff-lng" placeholder="Longitude" step="0.000001" value="-122.4094" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tier">Ride Tier</label>
+                        <select id="tier" required>
+                            <option value="ECONOMY">Economy</option>
+                            <option value="PREMIUM">Premium</option>
+                            <option value="LUXURY">Luxury</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="payment-method">Payment Method</label>
+                        <select id="payment-method" required>
+                            <option value="CARD">Card</option>
+                            <option value="CASH">Cash</option>
+                            <option value="WALLET">Wallet</option>
+                            <option value="UPI">UPI</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Request Ride</button>
+                </form>
+            </section>
+
+            <!-- Live Rides Section -->
+            <section class="card">
+                <div class="section-header">
+                    <h2>🚕 Active Rides</h2>
+                    <span class="badge" id="active-count">0</span>
+                </div>
+                <div id="active-rides" class="rides-list">
+                    <div class="empty-state">No active rides</div>
+                </div>
+            </section>
+
+            <!-- Available Drivers Section -->
+            <section class="card">
+                <div class="section-header">
+                    <h2>👨‍✈️ Available Drivers</h2>
+                    <span class="badge" id="driver-count">0</span>
+                </div>
+                <div id="drivers-list" class="drivers-list">
+                    <div class="empty-state">No drivers online</div>
+                </div>
+            </section>
+
+            <!-- Activity Log -->
+            <section class="card activity-log">
+                <h2>📊 Live Activity</h2>
+                <div id="activity-log" class="log-container"></div>
+            </section>
+        </div>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
