@@ -205,7 +205,6 @@ CREATE TABLE drivers (
 
 -- Indexes for performance
 CREATE INDEX idx_drivers_status ON drivers(status);
-CREATE INDEX idx_drivers_location ON drivers USING GIST(location);
 ```
 
 #### Rides Table
@@ -510,9 +509,6 @@ CREATE INDEX idx_rides_status ON rides(status);
 -- Payment retry queries
 CREATE INDEX idx_payments_next_retry ON payments(next_retry_at)
 WHERE next_retry_at IS NOT NULL AND status = 'PENDING';
-
--- Geospatial queries (PostGIS)
-CREATE INDEX idx_drivers_location ON drivers USING GIST(location);
 
 -- Trip queries by driver (history, active trip check)
 CREATE INDEX idx_trips_driver_id ON trips(driver_id, ride_id);
