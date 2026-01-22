@@ -422,7 +422,7 @@ exports.getTripReceipt = async (tripId) => {
   const rates = TIER_RATES[trip.tier] || TIER_RATES.ECONOMY;
   const durationMin = trip.duration_sec / 60;
   
-  return {
+  const receiptData = {
     receipt_id: trip.trip_id,
     trip_id: trip.trip_id,
     ride_id: trip.ride_id,

@@ -13,6 +13,16 @@ exports.createDriver = async (req, res, next) => {
   }
 };
 
+exports.getDriver = async (req, res, next) => {
+  try {
+    const driver = await service.getDriverById(req.params.id);
+    res.json(driver);
+  } catch (e) {
+    logger.error({ error: e.message, driverId: req.params.id }, 'Failed to get driver');
+    next(e);
+  }
+};
+
 exports.getAllDrivers = async (req, res, next) => {
   try {
     const { status, limit = 50 } = req.query;
@@ -29,6 +39,18 @@ exports.getAllDrivers = async (req, res, next) => {
     params.push(limit);
     
     const result = await db.query(query, params);
+    
+    // Update Redis cache for all drivers
+    const redis = require('../utils/redis');
+    const { CACHE_TTL } = require('../utils/redis');
+    
+    await Promise.all(result.rows.map(driver => 
+      Promise.all([
+        redis.setEx(`driver:${driver.id}`, CACHE_TTL.DRIVER_STATUS, JSON.stringify(driver)),
+        redis.setEx(`driver:status:${driver.id}`, CACHE_TTL.DRIVER_STATUS, driver.status)
+      ])
+    ));
+    
     logger.info({ count: result.rowCount }, 'Retrieved drivers list');
     res.json(result.rows);
   } catch (e) {
@@ -99,7 +121,7 @@ exports.updateStatus = async (req, res, next) => {
       });
     }
     
-    const result = await driverService.updateDriverStatus(driverId, status);
+    const result = await service.updateDriverStatus(driverId, status);
     res.json(result);
   } catch (e) {
     next(e);
