@@ -37,7 +37,7 @@ CREATE TABLE rides (
   tier ride_tier NOT NULL DEFAULT 'ECONOMY',
   payment_method payment_method NOT NULL DEFAULT 'CARD',
   surge_multiplier NUMERIC(3,2) NOT NULL DEFAULT 1.0,
-  assigned_driver_id UUID UNIQUE,
+  assigned_driver_id UUID,
   assigned_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT now(),
   updated_at TIMESTAMP NOT NULL DEFAULT now(),

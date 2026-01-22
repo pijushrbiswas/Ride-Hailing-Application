@@ -73,18 +73,17 @@ async function attemptDriverAssignment(ride) {
           driverId 
         }, 'Attempting assignment to driver');
         
-        // Attempt assignment
-        const result = await assignmentService.assignDriver(ride.id, driverId);
+        // Phase 1: Assign driver to ride
+        const assignResult = await assignmentService.assignDriver(ride.id, driverId);
         
-        if (result.success) {
+        if (assignResult && assignResult.success) {
           logger.info({ 
             rideId: ride.id, 
-            driverId,
-            tripId: result.trip.id
-          }, 'Successfully assigned driver to ride');
+            driverId
+          }, 'Driver assigned successfully');
           
           newrelic.recordMetric('Custom/Matching/Success', 1);
-          return result;
+          return { success: true, ride: assignResult.ride };
         }
       } catch (err) {
         // Driver might have been assigned to another ride, continue to next
@@ -155,13 +154,35 @@ async function processMatchingRides() {
     for (let i = 0; i < pendingRides.length; i += batchSize) {
       const batch = pendingRides.slice(i, i + batchSize);
       
-      await Promise.allSettled(
+      const results = await Promise.allSettled(
         batch.map(ride => attemptDriverAssignment(ride))
       );
+      
+      // Log results for debugging
+      let successful = 0;
+      let failed = 0;
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          if (result.value) {
+            successful++;
+            logger.debug({ rideId: batch[index].id }, 'Ride assignment succeeded');
+          }
+        } else {
+          failed++;
+          logger.warn({ 
+            rideId: batch[index].id, 
+            error: result.reason?.message 
+          }, 'Ride assignment failed');
+        }
+      });
+      
+      if (successful > 0 || failed > 0) {
+        logger.info({ successful, failed, batchSize: batch.length }, 'Batch processing completed');
+      }
     }
     
   } catch (err) {
-    logger.error({ error: err.message }, 'Error processing matching rides');
+    logger.error({ error: err.message, stack: err.stack }, 'Error processing matching rides');
     newrelic.noticeError(err, { context: 'processMatchingRides' });
   }
 }

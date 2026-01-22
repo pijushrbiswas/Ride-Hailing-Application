@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS rides (
 
   surge_multiplier NUMERIC(3,2) NOT NULL DEFAULT 1.0,
 
-  assigned_driver_id UUID UNIQUE,
+  assigned_driver_id UUID,
   assigned_at TIMESTAMP,
 
   created_at TIMESTAMP NOT NULL DEFAULT now(),
