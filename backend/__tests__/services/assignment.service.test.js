@@ -47,17 +47,20 @@ describe('Assignment Service', () => {
         status: 'DRIVER_ASSIGNED'
       };
 
-      const updatedDriver = {
-        id: 'driver-1',
-        status: 'ON_TRIP'
+      const rideData = {
+        id: 'ride-123',
+        rider_id: 'rider-1',
+        status: 'MATCHING',
+        driver_name: 'John Driver',
+        driver_phone: '+1234567890',
+        driver_rating: 4.8,
+        driver_status: 'AVAILABLE'
       };
 
       mockClient.query
         .mockResolvedValueOnce() // BEGIN
-        .mockResolvedValueOnce({ rows: [mockRide], rowCount: 1 }) // SELECT ride and driver FOR UPDATE
-        .mockResolvedValueOnce({ rows: [updatedDriver], rowCount: 1 }) // UPDATE driver
+        .mockResolvedValueOnce({ rows: [rideData], rowCount: 1 }) // SELECT ride and driver FOR UPDATE
         .mockResolvedValueOnce({ rows: [updatedRide], rowCount: 1 }) // UPDATE ride
-        .mockResolvedValueOnce({ rows: [{ id: 'trip-123' }], rowCount: 1 }) // INSERT trip
         .mockResolvedValueOnce(); // COMMIT
 
       notificationService.notifyRideAssigned.mockResolvedValue();
@@ -66,8 +69,7 @@ describe('Assignment Service', () => {
 
       expect(result.success).toBe(true);
       expect(result.ride).toEqual(updatedRide);
-      expect(result.trip.id).toBe('trip-123');
-      expect(result.driver.status).toBe('ON_TRIP');
+      expect(result.driver).toEqual(rideData);
       expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
       expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
       expect(notificationService.notifyRideAssigned).toHaveBeenCalledWith('rider-1', expect.any(Object));

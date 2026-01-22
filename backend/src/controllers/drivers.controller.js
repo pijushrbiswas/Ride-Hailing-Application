@@ -55,9 +55,31 @@ exports.acceptRide = async (req, res, next) => {
       return res.status(400).json({ error: 'ride_id is required' });
     }
     
-    const result = await assignmentService.assignDriver(ride_id, driverId);
-    res.json(result);
+    const tripData = await assignmentService.initializeTrip(
+      ride_id,
+      driverId
+    );
+    
+    // Broadcast trip accepted event with details
+    const wsManager = require('../utils/websocket');
+    wsManager.broadcastTripAccepted({
+      trip: tripData.trip,
+      driver: tripData.driver
+    });
+    
+    logger.info(
+      { tripId: tripData.trip.id, rideId: ride_id, driverId },
+      'Trip accepted and initialized successfully'
+    );
+    
+    // Combine results for response
+    res.json({
+      success: true,
+      trip: tripData.trip,
+      driver: tripData.driver
+    });
   } catch (e) {
+    logger.error({ error: e.message, driverId: req.params.id, rideId: req.body.ride_id }, 'Failed to accept ride');
     next(e);
   }
 };

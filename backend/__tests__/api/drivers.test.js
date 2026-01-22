@@ -21,6 +21,14 @@ jest.mock('../../src/utils/redis', () => ({
 jest.mock('../../src/services/notification.service', () => ({
   notifyRideAssigned: jest.fn().mockResolvedValue(true)
 }));
+jest.mock('../../src/utils/websocket', () => ({
+  broadcastRideCreated: jest.fn(),
+  broadcastRideUpdated: jest.fn(),
+  broadcastDriverAssigned: jest.fn(),
+  broadcastTripAccepted: jest.fn(),
+  broadcastLocationUpdate: jest.fn(),
+  broadcastDriverStatusChanged: jest.fn()
+}));
 
 // Import app AFTER mocks
 const app = require('../../src/app');
@@ -30,34 +38,25 @@ describe('Drivers API', () => {
     it('should accept ride assignment', async () => {
       const mockClient = {
         query: jest.fn()
-          .mockResolvedValueOnce() // BEGIN
-          .mockResolvedValueOnce({ // SELECT with JOIN
+          // initializeTrip() calls
+          .mockResolvedValueOnce() // initializeTrip: BEGIN
+          .mockResolvedValueOnce({ // initializeTrip: UPDATE driver
             rows: [{
-              id: '650e8400-e29b-41d4-a716-446655440000',
-              status: 'MATCHING',
-              rider_id: '750e8400-e29b-41d4-a716-446655440000',
-              driver_name: 'Test Driver',
-              driver_phone: '+1234567890',
-              driver_rating: 4.5,
-              driver_status: 'AVAILABLE'
+              id: '550e8400-e29b-41d4-a716-446655440000',
+              status: 'ON_TRIP'
             }],
             rowCount: 1
-          }) 
-          .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // UPDATE driver
-          .mockResolvedValueOnce({ // UPDATE rides RETURNING
-            rows: [{ 
-              id: '650e8400-e29b-41d4-a716-446655440000',
-              status: 'DRIVER_ASSIGNED'
-            }]
           })
-          .mockResolvedValueOnce({ // INSERT trip RETURNING
-            rows: [{ 
-              id: '850e8400-e29b-41d4-a716-446655440000',
+          .mockResolvedValueOnce({ // initializeTrip: INSERT trip
+            rows: [{
+              id: '750e8400-e29b-41d4-a716-446655440001',
               ride_id: '650e8400-e29b-41d4-a716-446655440000',
-              driver_id: '550e8400-e29b-41d4-a716-446655440000'
-            }]
+              driver_id: '550e8400-e29b-41d4-a716-446655440000',
+              status: 'CREATED'
+            }],
+            rowCount: 1
           })
-          .mockResolvedValueOnce(), // COMMIT
+          .mockResolvedValueOnce(), // initializeTrip: COMMIT
         release: jest.fn()
       };
 
@@ -71,7 +70,8 @@ describe('Drivers API', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.ride.status).toBe('DRIVER_ASSIGNED');
+      expect(response.body.trip.status).toBe('CREATED');
+      expect(response.body.driver.status).toBe('ON_TRIP');
     });
 
     it('should reject missing ride_id', async () => {

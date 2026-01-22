@@ -87,6 +87,9 @@ function handleWebSocketMessage(data) {
         case 'DRIVER_ASSIGNED':
             handleDriverAssigned(data.payload);
             break;
+        case 'TRIP_ACCEPTED':
+            handleTripAccepted(data.payload);
+            break;
         case 'DRIVER_CREATED':
             handleDriverCreated(data.payload);
             break;
@@ -134,6 +137,23 @@ function handleDriverAssigned(data) {
         logActivity(`✅ Driver ${data.driverName} assigned to ride ${data.rideId.substring(0, 8)}`, 'success');
         showNotification(`Driver ${data.driverName} assigned!`, 'success');
     }
+}
+
+function handleTripAccepted(data) {
+    // Update ride status to DRIVER_ASSIGNED if not already
+    const ride = rides.get(data.ride_id);
+    if (ride) {
+        ride.status = 'DRIVER_ASSIGNED';
+        ride.trip_id = data.trip_id;
+        rides.set(data.ride_id, ride);
+    }
+    
+    // Log trip acceptance with details
+    logActivity(`🎉 Trip accepted - Trip ID: ${data.trip_id.substring(0, 8)}, Driver ID: ${data.driver_id.substring(0, 8)}, Status: ${data.trip_status}`, 'success');
+    showNotification(`Trip ${data.trip_id.substring(0, 8)} accepted! Driver is ${data.driver_status}`, 'success');
+    
+    // Update UI
+    renderRides();
 }
 
 function handleDriverStatusChanged(driver) {
@@ -239,9 +259,14 @@ function setupFormHandler() {
             });
             
             if (response.ok) {
-                const ride = await response.json();
+                const result = await response.json();
+                const ride = result.ride || result;
                 showNotification('Ride requested successfully!', 'success');
-                logActivity(`📝 Ride request submitted: ${ride.id.substring(0, 8)}`, 'success');
+                if (ride && ride.id) {
+                    logActivity(`📝 Ride request submitted: ${ride.id.substring(0, 8)}`, 'success');
+                } else {
+                    logActivity('📝 Ride request submitted', 'success');
+                }
             } else {
                 const error = await response.json();
                 showNotification('Failed to request ride: ' + (error.message || 'Unknown error'), 'error');

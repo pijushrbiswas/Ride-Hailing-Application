@@ -2,7 +2,7 @@ const db = require('../db');
 const notificationService = require('./notification.service');
 const wsManager = require('../utils/websocket');
 const newrelic = require('newrelic');
-const { invalidateDriverCache, invalidateRideCache } = require('../utils/redis');
+const { invalidateDriverCache } = require('../utils/redis');
 const {
   RIDE_STATES,
   DRIVER_STATES,
@@ -12,6 +12,60 @@ const {
   canAcceptTrip,
   StateTransitionError
 } = require('../utils/stateMachine');
+
+/**
+ * Initialize trip by updating driver status and creating trip entry
+ * Used in accept endpoint flow after driver state validation
+ * @param {string} rideId - ID of the ride
+ * @param {string} driverId - ID of the driver
+ * @returns {object} { driver: updatedDriver, trip: tripData }
+ */
+exports.initializeTrip = async (rideId, driverId) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    // Update driver status to ON_TRIP
+    const driverUpdate = await client.query(
+      `UPDATE drivers
+       SET status=$1,
+           updated_at=now()
+       WHERE id=$2 AND status=$3
+       RETURNING *`,
+      [DRIVER_STATES.ON_TRIP, driverId, DRIVER_STATES.AVAILABLE]
+    );
+
+    if (driverUpdate.rowCount === 0) {
+      throw new Error('Driver not available for assignment');
+    }
+
+    const updatedDriver = driverUpdate.rows[0];
+
+    // Create trip in CREATED state
+    const tripResult = await client.query(
+      `INSERT INTO trips (ride_id, driver_id, status)
+       VALUES ($1, $2, 'CREATED')
+       RETURNING *`,
+      [rideId, driverId]
+    );
+
+    await client.query('COMMIT');
+
+    // Invalidate driver cache when status changes
+    await invalidateDriverCache(driverId);
+
+    wsManager.broadcastDriverStatusChanged(updatedDriver);
+
+    return { 
+      driver: updatedDriver, 
+      trip: tripResult.rows[0] 
+    };
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+};
 
 exports.assignDriver = async (rideId, driverId) => {
   const client = await db.getClient();
@@ -59,25 +113,6 @@ exports.assignDriver = async (rideId, driverId) => {
     
     validateDriverTransition(rideData.driver_status, DRIVER_STATES.ON_TRIP);
 
-    // Update driver status to ON_TRIP
-    const driverUpdate = await client.query(
-      `UPDATE drivers
-       SET status=$1,
-           updated_at=now()
-       WHERE id=$2 AND status=$3
-       RETURNING *`,
-      [DRIVER_STATES.ON_TRIP, driverId, DRIVER_STATES.AVAILABLE]
-    );
-
-    if (driverUpdate.rowCount === 0) {
-      throw new Error('Driver not available for assignment');
-    }
-
-    const updatedDriver = driverUpdate.rows[0];
-
-    // Invalidate driver cache when status changes
-    await invalidateDriverCache(driverId);
-
     // Update ride status to DRIVER_ASSIGNED
     const rideUpdate = await client.query(
       `UPDATE rides
@@ -90,20 +125,11 @@ exports.assignDriver = async (rideId, driverId) => {
       [RIDE_STATES.DRIVER_ASSIGNED, driverId, rideId]
     );
 
-    // Create trip in CREATED state
-    const tripResult = await client.query(
-      `INSERT INTO trips (ride_id, driver_id, status)
-       VALUES ($1, $2, 'CREATED')
-       RETURNING *`,
-      [rideId, driverId]
-    );
-
     await client.query('COMMIT');
 
     // Broadcast events
     wsManager.broadcastDriverAssigned(rideId, driverId, rideData.driver_name);
     wsManager.broadcastRideUpdated(rideUpdate.rows[0]);
-    wsManager.broadcastDriverStatusChanged(updatedDriver);
 
     // Send notification to rider
     await notificationService.notifyRideAssigned(rideData.rider_id, {
@@ -119,8 +145,7 @@ exports.assignDriver = async (rideId, driverId) => {
     return { 
       success: true,
       ride: rideUpdate.rows[0],
-      trip: tripResult.rows[0],
-      driver: updatedDriver
+      driver: rideData
     };
   } catch (e) {
     await client.query('ROLLBACK');

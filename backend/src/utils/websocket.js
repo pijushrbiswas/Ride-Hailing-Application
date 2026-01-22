@@ -118,6 +118,21 @@ class WebSocketManager {
     });
   }
 
+  // Broadcast trip accepted event (driver accepts ride and trip is initialized)
+  broadcastTripAccepted(tripData) {
+    this.broadcast({
+      type: 'TRIP_ACCEPTED',
+      payload: {
+        trip_id: tripData.trip.id,
+        ride_id: tripData.trip.ride_id,
+        driver_id: tripData.trip.driver_id,
+        driver_status: tripData.driver.status,
+        trip_status: tripData.trip.status,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+
   // Broadcast trip ended event
   broadcastTripEnded(trip) {
     this.broadcast({

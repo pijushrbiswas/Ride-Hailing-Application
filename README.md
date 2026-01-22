@@ -332,21 +332,40 @@ sequenceDiagram
         Worker->>Redis: GEOSEARCH nearby drivers
         Worker->>DB: BEGIN + FOR UPDATE (ride + driver)
         Worker->>DB: UPDATE ride (DRIVER_ASSIGNED)
-        Worker->>DB: UPDATE driver (ON_TRIP)
-        Worker->>DB: INSERT trip (CREATED)
         Worker->>DB: COMMIT
         Worker->>WebSocket: Broadcast DRIVER_ASSIGNED
     end
     
     WebSocket-->>Rider: Driver assigned notification
     WebSocket-->>Driver: New ride notification
+
+    Driver->>API: POST /v1/drivers/:id/accept
+    API->>DB: BEGIN + FOR UPDATE (driver + ride)
+    API->>DB: UPDATE driver (ON_TRIP)
+    API->>DB: INSERT trip (CREATED)
+    API->>DB: COMMIT
+    API->>WebSocket: Broadcast TRIP_ACCEPTED with trip details
+    API-->>Driver: Trip created response
+    WebSocket-->>Rider: Trip acceptance notification
+    WebSocket-->>Driver: Trip confirmed notification
 ```
 
 **Key Implementation Details:**
-- **File:** `matching.worker.js:58-90`
+- **Assignment File:** [matching.worker.js](backend/src/workers/matching.worker.js#L58-L90) - Automatically assigns driver to ride in MATCHING state
+- **Accept File:** [drivers.controller.js](backend/src/controllers/drivers.controller.js#L49) - Driver accepts assigned ride via `/accept` endpoint
 - **Lock Acquisition:** `FOR UPDATE OF r, d` prevents race conditions
 - **Validation:** `validateRideTransition()` + `validateDriverTransition()` before state change
+- **Two-Phase Flow:**
+  1. **Assignment Phase** (Automatic): `assignDriver()` matches driver to ride → Ride becomes `DRIVER_ASSIGNED`
+  2. **Accept Phase** (Manual): `initializeTrip()` updates driver to `ON_TRIP` + creates trip in `CREATED` state
 - **Idempotency:** Driver assignment uses DB unique constraint on `assigned_driver_id`
+- **Real-time Broadcasting:** `broadcastTripAccepted()` sends comprehensive trip details to all connected clients including:
+  - `trip_id`: Unique trip identifier
+  - `ride_id`: Associated ride identifier
+  - `driver_id`: Driver who accepted the ride
+  - `driver_status`: Driver current status (ON_TRIP)
+  - `trip_status`: Trip current status (CREATED)
+  - `timestamp`: ISO timestamp of acceptance event
 
 ### Workflow 2: Trip Start → End → Fare Calculation
 
@@ -492,6 +511,136 @@ if (payment.retry_count < MAX_RETRIES) {
   );
 }
 ```
+
+---
+
+## Assignment Service Architecture
+
+### Two-Phase Driver Assignment
+
+The assignment flow is split into two distinct phases to separate concerns:
+
+#### Phase 1: Driver Assignment (`assignDriver()`)
+**File:** `assignment.service.js:56-127`
+
+Called by the matching worker to match a driver to a ride.
+
+```javascript
+exports.assignDriver = async (rideId, driverId) => {
+  // 1. Lock ride and driver rows
+  // 2. Validate ride state (MATCHING or DRIVER_ASSIGNED allowed)
+  // 3. Validate driver state (AVAILABLE)
+  // 4. Validate state transitions
+  // 5. Update ride status to DRIVER_ASSIGNED
+  // 6. Broadcast events to rider and driver
+  // 7. Send notification to rider
+}
+```
+
+**Return Value:**
+```javascript
+{
+  success: true,
+  ride: { id, status: 'DRIVER_ASSIGNED', ... },
+  driver: { id, status: 'AVAILABLE', ... }  // Driver status unchanged
+}
+```
+
+**Responsibilities:**
+- ✅ Match driver to ride
+- ✅ Validate state transitions
+- ✅ Update ride to DRIVER_ASSIGNED
+- ✅ Notify rider
+- ❌ Do NOT update driver status
+- ❌ Do NOT create trip
+
+#### Phase 2: Trip Initialization (`initializeTrip()`)
+**File:** `assignment.service.js:17-50`
+
+Called by the accept endpoint when driver accepts the assigned ride.
+
+```javascript
+exports.initializeTrip = async (client, rideId, driverId) => {
+  // 1. Update driver status from AVAILABLE to ON_TRIP
+  // 2. Create trip entry in CREATED state
+  // 3. Return updated driver and trip data
+}
+```
+
+**Return Value:**
+```javascript
+{
+  driver: { id, status: 'ON_TRIP', ... },
+  trip: { id, ride_id, driver_id, status: 'CREATED', ... }
+}
+```
+
+**Responsibilities:**
+- ✅ Update driver status to ON_TRIP
+- ✅ Create trip in CREATED state
+- ❌ Do NOT modify ride status
+
+### API Endpoints
+
+#### POST /v1/drivers/:id/accept
+**File:** `drivers.controller.js:49`
+
+```javascript
+exports.acceptRide = async (req, res, next) => {
+  try {
+    const driverId = req.params.id;
+    const { ride_id } = req.body;
+    
+    const result = await assignmentService.assignDriver(ride_id, driverId);
+    
+    // Then initialize trip
+    const tripData = await assignmentService.initializeTrip(
+      client,
+      ride_id,
+      driverId
+    );
+    
+    res.json({
+      success: true,
+      ride: result.ride,
+      trip: tripData.trip,
+      driver: tripData.driver
+    });
+  } catch (e) {
+    next(e);
+  }
+};
+```
+
+**Request:**
+```json
+{
+  "ride_id": "uuid"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "ride": { "id": "uuid", "status": "DRIVER_ASSIGNED" },
+  "trip": { "id": "uuid", "status": "CREATED" },
+  "driver": { "id": "uuid", "status": "ON_TRIP" }
+}
+```
+
+### State Transition Rules
+
+**Ride States:**
+- `REQUESTED` → `MATCHING` (always)
+- `MATCHING` → `DRIVER_ASSIGNED` (via assignDriver)
+- `DRIVER_ASSIGNED` → `DRIVER_ASSIGNED` (idempotent re-assignment)
+- `DRIVER_ASSIGNED` → `COMPLETED` (via trip end)
+
+**Driver States:**
+- `OFFLINE` → `AVAILABLE` (go online)
+- `AVAILABLE` → `ON_TRIP` (via initializeTrip in accept flow)
+- `ON_TRIP` → `AVAILABLE` (via trip end)
 
 ---
 
@@ -1035,7 +1184,9 @@ backend/
 │   │   ├── trip.service.js       # Trip lifecycle + fare calc
 │   │   ├── payment.service.js    # PSP integration + retries
 │   │   ├── matching.service.js   # Redis GEOSEARCH
-│   │   ├── assignment.service.js # Driver assignment (transactional)
+│   │   ├── assignment.service.js # Driver assignment + trip initialization
+│   │   │                         # - assignDriver(): Match driver to ride
+│   │   │                         # - initializeTrip(): Update driver status + create trip
 │   │   └── notification.service.js# Push notifications (mocked)
 │   ├── middlewares/
 │   │   ├── idempotency.middleware.js  # Redis-backed idempotency
