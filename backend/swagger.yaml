@@ -1,0 +1,832 @@
+openapi: 3.0.0
+info:
+  title: Ride-Hailing Application API
+  description: Backend API for a scalable ride-hailing platform with real-time driver matching, idempotent payments, and state machine validation
+  version: 1.0.0
+  contact:
+    name: API Support
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+  - url: https://api.ride-hailing.com
+    description: Production server
+
+tags:
+  - name: Drivers
+    description: Driver management and location updates
+  - name: Rides
+    description: Ride requests and matching
+  - name: Trips
+    description: Trip execution and management
+  - name: Payments
+    description: Payment processing and webhook handling
+
+paths:
+  /v1/drivers:
+    post:
+      tags:
+        - Drivers
+      summary: Create a new driver
+      operationId: createDriver
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDriverRequest'
+      responses:
+        '201':
+          description: Driver created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      tags:
+        - Drivers
+      summary: Get all drivers
+      operationId: getAllDrivers
+      responses:
+        '200':
+          description: List of all drivers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Driver'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/drivers/{id}:
+    get:
+      tags:
+        - Drivers
+      summary: Get driver by ID
+      operationId: getDriver
+      parameters:
+        - $ref: '#/components/parameters/DriverId'
+      responses:
+        '200':
+          description: Driver details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/drivers/{id}/location:
+    post:
+      tags:
+        - Drivers
+      summary: Update driver location (real-time)
+      operationId: updateLocation
+      parameters:
+        - $ref: '#/components/parameters/DriverId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLocationRequest'
+      responses:
+        '200':
+          description: Location updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded (120 requests/minute)
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/drivers/{id}/status:
+    patch:
+      tags:
+        - Drivers
+      summary: Update driver status
+      operationId: updateStatus
+      parameters:
+        - $ref: '#/components/parameters/DriverId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/drivers/{id}/accept:
+    post:
+      tags:
+        - Drivers
+      summary: Driver accepts a ride
+      operationId: acceptRide
+      parameters:
+        - $ref: '#/components/parameters/DriverId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptRideRequest'
+      responses:
+        '200':
+          description: Ride accepted, trip initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptRideResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Conflict - Driver unavailable or ride already assigned
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/rides:
+    post:
+      tags:
+        - Rides
+      summary: Create a new ride request
+      operationId: createRide
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: Unique idempotency key to prevent duplicate requests
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRideRequest'
+      responses:
+        '201':
+          description: Ride created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ride'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      tags:
+        - Rides
+      summary: Get all rides
+      operationId: getAllRides
+      responses:
+        '200':
+          description: List of all rides
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ride'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/rides/{id}:
+    get:
+      tags:
+        - Rides
+      summary: Get ride by ID
+      operationId: getRide
+      parameters:
+        - $ref: '#/components/parameters/RideId'
+      responses:
+        '200':
+          description: Ride details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ride'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/rides/{id}/retry-matching:
+    post:
+      tags:
+        - Rides
+      summary: Retry driver matching for a ride
+      operationId: retryMatching
+      parameters:
+        - $ref: '#/components/parameters/RideId'
+      responses:
+        '200':
+          description: Matching retried successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ride'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/trips/{id}/start:
+    post:
+      tags:
+        - Trips
+      summary: Start a trip
+      operationId: startTrip
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: Trip started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/trips/{id}/pause:
+    post:
+      tags:
+        - Trips
+      summary: Pause a trip
+      operationId: pauseTrip
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: Trip paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/trips/{id}/end:
+    post:
+      tags:
+        - Trips
+      summary: End a trip
+      operationId: endTrip
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndTripRequest'
+      responses:
+        '200':
+          description: Trip ended successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/trips/{id}/receipt:
+    get:
+      tags:
+        - Trips
+      summary: Get trip receipt
+      operationId: getReceipt
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: Trip receipt with fare breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Receipt'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/trips/driver/{driverId}/ride/{rideId}:
+    get:
+      tags:
+        - Trips
+      summary: Get trip by driver and ride
+      operationId: getTripByDriverAndRide
+      parameters:
+        - $ref: '#/components/parameters/DriverId'
+        - $ref: '#/components/parameters/RideId'
+      responses:
+        '200':
+          description: Trip details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/payments:
+    post:
+      tags:
+        - Payments
+      summary: Create payment
+      operationId: createPayment
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: Unique idempotency key to prevent duplicate charges
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '201':
+          description: Payment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: Rate limit exceeded (10 requests/15 minutes)
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/payments/{id}:
+    get:
+      tags:
+        - Payments
+      summary: Get payment status
+      operationId: getPayment
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Payment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /v1/payments/webhooks/psp:
+    post:
+      tags:
+        - Payments
+      summary: PSP webhook callback (no rate limit)
+      operationId: handleWebhook
+      parameters:
+        - name: X-PSP-Signature
+          in: header
+          description: HMAC signature for webhook validation
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PSPWebhookRequest'
+      responses:
+        '200':
+          description: Webhook processed successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Unauthorized - Invalid signature
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  parameters:
+    DriverId:
+      name: id
+      in: path
+      required: true
+      description: Driver UUID
+      schema:
+        type: string
+        format: uuid
+
+    RideId:
+      name: id
+      in: path
+      required: true
+      description: Ride UUID
+      schema:
+        type: string
+        format: uuid
+
+    TripId:
+      name: id
+      in: path
+      required: true
+      description: Trip UUID
+      schema:
+        type: string
+        format: uuid
+
+    PaymentId:
+      name: id
+      in: path
+      required: true
+      description: Payment UUID
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CreateDriverRequest:
+      type: object
+      required:
+        - name
+        - phone
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+          example: "John Doe"
+        phone:
+          type: string
+          pattern: '^\+?[1-9]\d{1,14}$'
+          example: "+12025551234"
+
+    Driver:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+          enum: ['OFFLINE', 'AVAILABLE', 'ON_TRIP']
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateLocationRequest:
+      type: object
+      required:
+        - latitude
+        - longitude
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+
+    UpdateStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: ['OFFLINE', 'AVAILABLE', 'ON_TRIP']
+
+    AcceptRideRequest:
+      type: object
+      required:
+        - ride_id
+      properties:
+        ride_id:
+          type: string
+          format: uuid
+
+    AcceptRideResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        driver:
+          $ref: '#/components/schemas/Driver'
+        trip:
+          $ref: '#/components/schemas/Trip'
+
+    CreateRideRequest:
+      type: object
+      required:
+        - rider_id
+        - pickup_latitude
+        - pickup_longitude
+        - drop_latitude
+        - drop_longitude
+      properties:
+        rider_id:
+          type: string
+          format: uuid
+        pickup_latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        pickup_longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        drop_latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        drop_longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+
+    Ride:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rider_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: ['REQUESTED', 'MATCHING', 'DRIVER_ASSIGNED', 'COMPLETED', 'CANCELLED', 'EXPIRED']
+        pickup_latitude:
+          type: number
+          format: double
+        pickup_longitude:
+          type: number
+          format: double
+        drop_latitude:
+          type: number
+          format: double
+        drop_longitude:
+          type: number
+          format: double
+        assigned_driver_id:
+          type: string
+          format: uuid
+        assigned_at:
+          type: string
+          format: date-time
+        surge_multiplier:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    EndTripRequest:
+      type: object
+      required:
+        - distance_km
+        - duration_sec
+        - base_fare
+      properties:
+        distance_km:
+          type: number
+          format: double
+          minimum: 0
+        duration_sec:
+          type: integer
+          minimum: 0
+        base_fare:
+          type: number
+          format: double
+          minimum: 0
+
+    Trip:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ride_id:
+          type: string
+          format: uuid
+        driver_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: ['CREATED', 'STARTED', 'PAUSED', 'ENDED', 'CANCELLED']
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        distance_km:
+          type: number
+          format: double
+        duration_sec:
+          type: integer
+        base_fare:
+          type: number
+          format: double
+        total_fare:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Receipt:
+      type: object
+      properties:
+        trip_id:
+          type: string
+          format: uuid
+        distance_km:
+          type: number
+          format: double
+        duration_sec:
+          type: integer
+        base_fare:
+          type: number
+          format: double
+        surge_multiplier:
+          type: number
+          format: double
+        total_fare:
+          type: number
+          format: double
+        payment_status:
+          type: string
+          enum: ['PENDING', 'COMPLETED', 'FAILED']
+
+    CreatePaymentRequest:
+      type: object
+      required:
+        - trip_id
+        - amount
+        - payment_method
+      properties:
+        trip_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: double
+          minimum: 0
+        payment_method:
+          type: string
+          enum: ['CARD', 'UPI', 'WALLET']
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: double
+        status:
+          type: string
+          enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'REFUNDED']
+        payment_method:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    PSPWebhookRequest:
+      type: object
+      required:
+        - payment_id
+        - status
+        - timestamp
+      properties:
+        payment_id:
+          type: string
+          description: External payment provider ID
+        status:
+          type: string
+          enum: ['COMPLETED', 'FAILED', 'CANCELLED']
+        timestamp:
+          type: string
+          format: date-time
+        amount:
+          type: number
+          format: double
+        error_code:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Bad request - Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

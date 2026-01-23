@@ -6,6 +6,8 @@ const ridesRoutes = require('./routes/rides');
 const driversRoutes = require('./routes/drivers');
 const tripsRoutes = require('./routes/trips');
 const paymentRoutes = require('./routes/payments');
+const swaggerUi = require('swagger-ui-express');
+const swaggerDoc = require('../swagger.json');
 
 const app = express();
 
@@ -23,6 +25,7 @@ app.use('/v1/payments', paymentRoutes);
 app.use('/v1/rides', ridesRoutes);
 app.use('/v1/drivers', driversRoutes);
 app.use('/v1/trips', tripsRoutes);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDoc));
 
 // Health check (no rate limit)
 app.get('/health', (_, res) => {

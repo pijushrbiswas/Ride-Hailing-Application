@@ -19,7 +19,7 @@
 
 A production-grade ride-hailing platform built with:
 - **Backend:** Node.js 20 + Express.js
-- **Database:** PostgreSQL 15 + PostGIS for geospatial queries
+- **Database:** PostgreSQL 15
 - **Cache:** Redis 7 (geospatial indexing + idempotency)
 - **Real-time:** WebSocket for live updates
 - **Observability:** New Relic APM
@@ -268,6 +268,30 @@ CREATE INDEX idx_payments_next_retry
 ON payments(next_retry_at)
 WHERE next_retry_at IS NOT NULL AND status = 'PENDING';
 ```
+
+#### Outbox Events Table (Exactly-Once Guarantee)
+```sql
+CREATE TABLE outbox_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  aggregate_type TEXT NOT NULL,        -- 'PAYMENT', 'TRIP', 'RIDE', 'DRIVER'
+  aggregate_id UUID NOT NULL,          -- ID of the related entity
+  event_type TEXT NOT NULL,            -- 'PAYMENT_CREATED', 'TRIP_STARTED', etc.
+  payload JSONB NOT NULL,              -- Full event data as JSON
+  processed BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Index for finding unprocessed events (outbox worker)
+CREATE INDEX idx_outbox_unprocessed
+ON outbox_events(processed)
+WHERE processed = FALSE;
+```
+
+**Purpose:** Implements the Outbox Pattern for exactly-once event processing:
+- When a domain event occurs (payment created, trip ended), it's written to `outbox_events` in the same transaction
+- Separate worker polls this table and publishes events to external systems (webhooks, message queues)
+- Only marks as `processed = true` after successful delivery
+- Prevents lost events on service crashes and ensures idempotency
 
 ### State Machines (`backend/src/utils/stateMachine.js`)
 

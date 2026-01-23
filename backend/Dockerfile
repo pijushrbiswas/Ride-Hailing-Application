@@ -12,6 +12,8 @@ RUN npm ci --only=production
 # Copy source code
 COPY src ./src
 COPY newrelic.js ./
+COPY swagger.json ./
+COPY swagger.yaml ./
 
 # ================================
 # Runtime stage
